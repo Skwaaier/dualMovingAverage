@@ -12,15 +12,8 @@ Crypto trading bot using closing price and exponential moving average intersecti
 import os
 import pandas as pd
 import numpy as np
-import yaml
 import re
-import dateutil
 import time
-
-
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import mplfinance as mpf
 import ccxt
 
 
@@ -35,15 +28,16 @@ def my_floor(a, precision=0):
 timeframe = '15m'
 symbol = 'NEO/USDT'
 
-credentials = yaml.load(open('./credentials.yml'), Loader=yaml.SafeLoader)
+# credentials = yaml.load(open('./credentials.yml'), Loader=yaml.SafeLoader)
+import credentials
 
 # Connect to Binance
 
 # api currently only works for Lenovo laptop: add other IPs to Binance API later
 exchange = ccxt.binance({
-    'apiKey': credentials['binance']['api_key'],
-    'secret': credentials['binance']['secret'],
-    'options': {
+    'apiKey' : credentials.api_key,
+    'secret' : credentials.secret, 
+    'options' : {
         'adjustForTimeDifference': True,
         },
     'enableRateLimit': True
@@ -91,22 +85,6 @@ while True:
     
     # calculate exponential moving average using the last five data points
     close_ema5 = ohlcv_df['close'].ewm(span=5, adjust=False).mean().values[-2:]
-    
-    
-    # # check data
-    # historical_close_ema5 = ohlcv_df['close'].ewm(span=5, adjust=False).mean().values
-    # ema_df = pd.DataFrame(dict(ema5 = historical_close_ema5), index = ohlcv_timestamps)
-    # ap = mpf.make_addplot(ema_df, type='line')
-    
-    # intersect_ema5_idx = np.argwhere(np.diff(np.sign(ohlcv_df['close'].values - ema_df['ema5'].values))).flatten()
-    # intersect_ema5_df = pd.DataFrame(dict(intersection = ohlcv_df['close'].values[intersect_ema5_idx]), index = ohlcv_timestamps[intersect_ema5_idx])
-    
-    # plt.subplots()
-    # mpf.plot(ohlcv_df, type = 'candle', addplot = ap)
-    
-    # plt.subplots()
-    # plt.plot(ohlcv_timestamps, historical_close_ema5)
-    # plt.plot(ohlcv_timestamps[intersect_ema5_idx], intersect_ema5_df, 'ro')
     
     
     #%% Actions if last remote date is more recent than last date of local version
@@ -165,7 +143,7 @@ while True:
             amount_neo_floor = my_floor(amount_usdt/ohlcv_df['close'][-1], 3)
             if (amount_neo_floor >= 0.001) and (amount_neo_floor*ohlcv_df['close'][-1] >= 10):
                 order = exchange.create_order('NEO/USDT', 'limit', 'buy', amount_neo_floor, ohlcv_df['close'][-1])
-                print('Placed ' + symbol + ' buy limit order for $' + str(round(amount_usdt,2)) + ' at $' + str(round(ohlcv_df['close'][-1],2))+ ' (' + str(round(amount_usdt/ohlcv_df['close'][-1],3)) + ' NEO)')
+                print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Placed ' + symbol + ' buy limit order for $' + str(round(amount_usdt,2)) + ' at $' + str(round(ohlcv_df['close'][-1],2))+ ' (' + str(round(amount_usdt/ohlcv_df['close'][-1],3)) + ' NEO)')
                     
         
         # sell
@@ -175,7 +153,7 @@ while True:
             amount_neo_floor = my_floor(amount_neo,3)
             if (amount_neo_floor >= 0.001) and (amount_neo_floor*ohlcv_df['close'][-1] >= 10):
                 order = exchange.create_order('NEO/USDT', 'limit', 'sell', amount_neo_floor, ohlcv_df['close'][-1])
-                print('Placed ' + symbol + ' sell limit order for ' + str(amount_neo_floor) + ' NEO at $' + str(round(ohlcv_df['close'][-1],2)) + ' ($' + str(round(amount_neo_floor*ohlcv_df['close'][-1],2)) + ')')
+                print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Placed ' + symbol + ' sell limit order for ' + str(amount_neo_floor) + ' NEO at $' + str(round(ohlcv_df['close'][-1],2)) + ' ($' + str(round(amount_neo_floor*ohlcv_df['close'][-1],2)) + ')')
         
         # hold
         elif (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
@@ -189,18 +167,18 @@ while True:
                 amount_neo_floor = my_floor(amount_usdt/ohlcv_df['close'][-1], 3)
                 if (amount_neo_floor >= 0.001) and (amount_neo_floor*ohlcv_df['close'][-1] >= 10):
                     order = exchange.create_order('NEO/USDT', 'limit', 'buy', amount_neo_floor, ohlcv_df['close'][-1])
-                    print('Placed ' + symbol + ' buy limit order for $' + str(round(amount_usdt,2)) + ' at $' + str(round(ohlcv_df['close'][-1],2))+ ' (' + str(round(amount_usdt*ohlcv_df['close'][-1],2)) + ' NEO)')
+                    print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Placed ' + symbol + ' buy limit order for $' + str(round(amount_usdt,2)) + ' at $' + str(round(ohlcv_df['close'][-1],2))+ ' (' + str(round(amount_usdt*ohlcv_df['close'][-1],2)) + ' NEO)')
             
             else:
-                print('hodl')
+                print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Hodl')
         
         else:
-            print('no assets available')
+            print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : No assets available')
         
         # save order to order_book dataframe
         if order:
             order_data = {'id': int(order['id']), 'side' : order['side'], 'price' : order['price'], 'amount' : order['amount'], 'filled' : order['filled'], 'status' : 'open'}
-            order_time = dateutil.parser.parse(order['datetime'])
+            order_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             save_order = pd.DataFrame(order_data, index = [order_time])
             order_book = pd.concat([order_book, save_order])
             order_book.to_csv('order_book_' + re.sub(r'[^\w]', '', symbol) + '.csv')
@@ -208,5 +186,5 @@ while True:
 
             
     #%% Wait for one minute before checking for changes
-    print((time.time() - start_time) % 300.0)
+    
     time.sleep(10.0 - ((time.time() - start_time) % 10.0))
