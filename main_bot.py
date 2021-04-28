@@ -27,8 +27,7 @@ def my_floor(a, precision=0):
 
 #%% Input parameters
 
-timeframe = '1d'
-symbol_container = ['NEO/USDT'] # format : 'volatile/stable'
+symbol_dict = {'NEO/BUSD' : '1d', 'ETH/USDT' : '1d'} # {'volatile/stable' : 'timeframe'}
 
 # credentials = yaml.load(open('./credentials.yml'), Loader=yaml.SafeLoader)
 import credentials
@@ -49,7 +48,9 @@ exchange = ccxt.binance({
 
 #%% Initialisation
 
-for symbol in symbol_container:
+for symbol in symbol_dict.keys():
+    
+    timeframe = symbol_dict[symbol]
     
     # Create local order book
     if not os.path.isfile('order_book_' + re.sub(r'[^\w]', '', symbol) + '.csv'):
@@ -79,10 +80,11 @@ start_time = time.time()
 
 while True:
     
-    for symbol in symbol_container:
+    for symbol in symbol_dict.keys():
         
         str_volatile = symbol.split('/')[0]
         str_stable = symbol.split('/')[1]
+        timeframe = symbol_dict[symbol]
 
         time.sleep(3) # hold for three seconds before pulling new data after candle change
         
@@ -162,7 +164,6 @@ while True:
                     order = exchange.create_order(symbol, 'limit', 'buy', amount_volatile_floor, ohlcv_df['close'][-1])
                     print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Placed ' + symbol + ' buy limit order for ' + str(round(amount_stable,2)) + ' ' + str_stable + 
                           ' at ' + str(round(ohlcv_df['close'][-1],2)) + ' ' + str_stable + ' (' + str(round(amount_stable/ohlcv_df['close'][-1],3)) + ' ' + str_volatile + ')')
-                        
             
             # sell
             elif (ohlcv_df['close'][-1] < close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
@@ -190,10 +191,10 @@ while True:
                               ' at ' + str(round(ohlcv_df['close'][-1],2)) + ' ' + str_stable + ' (' + str(round(amount_stable*ohlcv_df['close'][-1],2)) + ' ' + str_volatile + ')')
                 
                 else:
-                    print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Hodl')
+                    print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Hodl ' + symbol)
             
             else:
-                print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : No assets available')
+                print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : No assets available for ' + symbol)
             
             # save order to order_book dataframe
             if order:
