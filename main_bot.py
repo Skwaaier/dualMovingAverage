@@ -16,6 +16,8 @@ import re
 import time
 import ccxt
 
+from urllib.error import HTTPError
+
 
 #%% Functions
 
@@ -25,7 +27,7 @@ def my_floor(a, precision=0):
 
 #%% Input parameters
 
-timeframe = '1h'
+timeframe = '1d'
 symbol_container = ['NEO/USDT'] # format : 'volatile/stable'
 
 # credentials = yaml.load(open('./credentials.yml'), Loader=yaml.SafeLoader)
@@ -82,8 +84,15 @@ while True:
         str_volatile = symbol.split('/')[0]
         str_stable = symbol.split('/')[1]
 
+        time.sleep(3) # hold for three seconds before pulling new data after candle change
+        
         # each ohlcv candle is a list of [ timestamp, open, high, low, close, volume ]
-        ohlcv = exchange.fetch_ohlcv(symbol, timeframe)
+        try:
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe)
+        except ccxt.NetworkError:
+            time.sleep(60)
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe)
+            
         ohlcv = ohlcv[:-1] # remove last entity which is the partial (still moving) candle
         ohlcv_timestamps = pd.to_datetime([row[0] for row in ohlcv], unit = 'ms')
         ohlcv_data = [row[1:] for row in ohlcv]
@@ -96,6 +105,7 @@ while True:
         
         #%% Actions if last remote date is more recent than last date of local version
         if ohlcv_df.index[-1] > pd.Timestamp(local_history_df.index[-1]):
+            
             
             # Append historical data 
             try:
@@ -196,4 +206,4 @@ while True:
             
     #%% Wait for one minute before checking for changes
     
-    time.sleep(10.0 - ((time.time() - start_time) % 10.0))
+    time.sleep(60.0 - ((time.time() - start_time) % 60.0))
