@@ -16,6 +16,8 @@ import re
 import time
 import ccxt
 
+import credentials
+
 from urllib.error import HTTPError
 
 
@@ -27,14 +29,10 @@ def my_floor(a, precision=0):
 
 #%% Input parameters
 
+# Define coin pairs and associated time frame
 symbol_dict = {'NEO/BUSD' : '1d', 'ETH/USDT' : '1d'} # {'volatile/stable' : 'timeframe'}
 
-# credentials = yaml.load(open('./credentials.yml'), Loader=yaml.SafeLoader)
-import credentials
-
 # Connect to Binance
-
-# api currently only works for Lenovo laptop: add other IPs to Binance API later
 exchange = ccxt.binance({
     'apiKey' : credentials.api_key,
     'secret' : credentials.secret, 
@@ -44,6 +42,9 @@ exchange = ccxt.binance({
     'enableRateLimit': True
     })
 # exchange.set_sandbox_mode(True) # enabled sandbox
+
+# Maximum number of retries if the connection to the exchange fails
+numberOfRetries = 10
 
 
 #%% Initialisation
@@ -86,14 +87,15 @@ while True:
         str_stable = symbol.split('/')[1]
         timeframe = symbol_dict[symbol]
 
-        time.sleep(3) # hold for three seconds before pulling new data after candle change
-        
-        # each ohlcv candle is a list of [ timestamp, open, high, low, close, volume ]
-        try:
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe)
-        except ccxt.NetworkError:
-            time.sleep(60)
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe)
+        for _ in range(numberOfRetries):       
+            try:
+                # each ohlcv candle is a list of [ timestamp, open, high, low, close, volume ]
+                ohlcv = exchange.fetch_ohlcv(symbol, timeframe)
+                break
+            except (ccxt.NetworkError, HTTPError):
+                time.sleep(30)
+        else:
+            raise
             
         ohlcv = ohlcv[:-1] # remove last entity which is the partial (still moving) candle
         ohlcv_timestamps = pd.to_datetime([row[0] for row in ohlcv], unit = 'ms')
@@ -108,7 +110,6 @@ while True:
         #%% Actions if last remote date is more recent than last date of local version
         if ohlcv_df.index[-1] > pd.Timestamp(local_history_df.index[-1]):
             
-            
             # Append historical data 
             try:
                 lag_hours = np.count_nonzero(ohlcv_df.index > pd.Timestamp(local_history_df.index[-1]))
@@ -117,15 +118,13 @@ while True:
             except:
                 raise ValueError('Lag has become to big. Consider reinitiating historical data file with the most recent data.') 
             
-            
             # Load portfolio
             portfolio = pd.DataFrame(exchange.fetch_balance()['info']['balances'])
             portfolio['free'] = [float(price) for price in portfolio['free']]
             portfolio['locked'] = [float(price) for price in portfolio['locked']]
             portfolio['total'] = portfolio['free'] + portfolio['locked']
             portfolio = portfolio[(portfolio.select_dtypes(include=['number']) != 0).any(1)]
-            
-            
+                        
             # Load local order book
             order_book = pd.read_csv('order_book_' + re.sub(r'[^\w]', '', symbol) + '.csv', index_col=0)
             
@@ -138,8 +137,7 @@ while True:
                     order_book_index = order_book.loc[order_book.isin([int(open_order_ids[-1])]).any(axis=1)].index
                     order_book.loc[order_book_index, 'status'] = 'cancelled'
                     order_book.to_csv('order_book_' + re.sub(r'[^\w]', '', symbol) + '.csv')
-                    
-        
+                            
             # Load closed orders
             closed_order_ids = [closed_order['id'] for closed_order in exchange.fetchClosedOrders(symbol)]
             
