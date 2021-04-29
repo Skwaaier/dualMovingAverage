@@ -48,6 +48,9 @@ exchange = ccxt.binance({
 # Maximum number of retries if the connection to the exchange fails
 numberOfRetries = 10
 
+logFile = 'log.out'
+logging.basicConfig(filename=logFile, level=logging.ERROR)
+
 
 #%% Initialisation
 
@@ -91,6 +94,7 @@ while True:
             except (ccxt.NetworkError, HTTPError):
                 typ, val, tb = sys.exc_info()
                 logging.error(traceback.format_exception(typ, val, tb))
+                print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : encountered ' + typ)
                 time.sleep(30)
         else:
             raise
