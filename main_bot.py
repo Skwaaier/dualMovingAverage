@@ -9,7 +9,7 @@ Crypto trading bot using closing price and exponential moving average intersecti
 
 #%% Import libraries
 
-import os
+import os, sys
 import pandas as pd
 import numpy as np
 import re
@@ -19,6 +19,8 @@ import ccxt
 import credentials
 
 from urllib.error import HTTPError
+import traceback
+import logging
 
 
 #%% Functions
@@ -69,12 +71,6 @@ for symbol in symbol_dict.keys():
         ohlcv_df.to_csv('historical_data_' + re.sub(r'[^\w]', '', symbol) + '.csv')
     
 
-#%% Read local historical data
-
-    local_history_df = pd.read_csv('historical_data_' + re.sub(r'[^\w]', '', symbol) + '.csv', index_col=0)
-    local_history_df.index = [pd.Timestamp(x) for x in local_history_df.index]
-
-
 #%% Load remote data each minute
 
 start_time = time.time()
@@ -93,6 +89,8 @@ while True:
                 ohlcv = exchange.fetch_ohlcv(symbol, timeframe)
                 break
             except (ccxt.NetworkError, HTTPError):
+                typ, val, tb = sys.exc_info()
+                logging.error(traceback.format_exception(typ, val, tb))
                 time.sleep(30)
         else:
             raise
@@ -106,6 +104,12 @@ while True:
         # calculate exponential moving average using the last five data points
         close_ema5 = ohlcv_df['close'].ewm(span=5, adjust=False).mean().values[-2:]
         
+        
+        #%% Read local historical data
+
+        local_history_df = pd.read_csv('historical_data_' + re.sub(r'[^\w]', '', symbol) + '.csv', index_col=0)
+        local_history_df.index = [pd.Timestamp(x) for x in local_history_df.index]
+    
         
         #%% Actions if last remote date is more recent than last date of local version
         if ohlcv_df.index[-1] > pd.Timestamp(local_history_df.index[-1]):
@@ -123,7 +127,7 @@ while True:
             portfolio['free'] = [float(price) for price in portfolio['free']]
             portfolio['locked'] = [float(price) for price in portfolio['locked']]
             portfolio['total'] = portfolio['free'] + portfolio['locked']
-            portfolio = portfolio[(portfolio.select_dtypes(include=['number']) != 0).any(1)]
+            # portfolio = portfolio[(portfolio.select_dtypes(include=['number']) != 0).any(1)] # filter zero values
                         
             # Load local order book
             order_book = pd.read_csv('order_book_' + re.sub(r'[^\w]', '', symbol) + '.csv', index_col=0)
@@ -186,7 +190,7 @@ while True:
                     if (amount_volatile_floor >= 0.001) and (amount_volatile_floor*ohlcv_df['close'][-1] >= 10):
                         order = exchange.create_order(symbol, 'limit', 'buy', amount_volatile_floor, ohlcv_df['close'][-1])
                         print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Placed ' + symbol + ' buy limit order for ' + str(round(amount_stable,2)) + ' ' + str_stable +
-                              ' at ' + str(round(ohlcv_df['close'][-1],2)) + ' ' + str_stable + ' (' + str(round(amount_stable*ohlcv_df['close'][-1],2)) + ' ' + str_volatile + ')')
+                              ' at ' + str(round(ohlcv_df['close'][-1],2)) + ' ' + str_stable + ' (' + str(round(amount_stable/ohlcv_df['close'][-1],2)) + ' ' + str_volatile + ')')
                 
                 else:
                     print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Hodl ' + symbol)
