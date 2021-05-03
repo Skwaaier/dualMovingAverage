@@ -32,7 +32,7 @@ def my_floor(a, precision=0):
 #%% Input parameters
 
 # Define coin pairs and associated time frame
-symbol_dict = {'NEO/BUSD' : '1d', 'ETH/USDT' : '1d'} # {'volatile/stable' : 'timeframe'}
+symbol_dict = {'NEO/USDT' : '1d', 'ETH/USDT' : '1d'} # {'volatile/stable' : 'timeframe'}
 
 # Connect to Binance
 exchange = ccxt.binance({
@@ -94,7 +94,7 @@ while True:
             except (ccxt.NetworkError, HTTPError):
                 typ, val, tb = sys.exc_info()
                 logging.error(traceback.format_exception(typ, val, tb))
-                print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : encountered ' + typ)
+                print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : encountered error')
                 time.sleep(30)
         else:
             raise
@@ -164,7 +164,15 @@ while True:
             # buy
             if (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] < close_ema5[-2]):
                 row_stable = portfolio.where(portfolio==str_stable).dropna(how='all').index
-                amount_stable = portfolio.loc[row_stable]['free'].values[0]
+                
+                # buy for stable amount equal to last sell
+                if not order_book[(order_book['side'] == 'sell')].empty and (order_book[(order_book['side'] == 'sell')].iloc[-1]['status'] == 'closed'):
+                    last_sell_stable = order_book[(order_book['side'] == 'sell')].iloc[-1]
+                    amount_stable = last_sell_stable['price']*last_sell_stable['filled']
+                # no previous sell in order_book
+                else:
+                    amount_stable = portfolio.loc[row_stable]['free'].values[0]
+                
                 amount_volatile_floor = my_floor(amount_stable/ohlcv_df['close'][-1], 3)
                 if (amount_volatile_floor >= 0.001) and (amount_volatile_floor*ohlcv_df['close'][-1] >= 10):
                     order = exchange.create_order(symbol, 'limit', 'buy', amount_volatile_floor, ohlcv_df['close'][-1])
