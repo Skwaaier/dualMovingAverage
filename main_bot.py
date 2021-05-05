@@ -34,6 +34,9 @@ def my_floor(a, precision=0):
 # Define coin pairs and associated time frame
 symbol_dict = {'NEO/USDT' : '1d', 'ETH/USDT' : '1d'} # {'volatile/stable' : 'timeframe'}
 
+# Relative offset for limit orders (price = close +/- price_offset*(close - open))
+price_offset = 0.25
+
 # Connect to Binance
 exchange = ccxt.binance({
     'apiKey' : credentials.api_key,
@@ -173,21 +176,25 @@ while True:
                 else:
                     amount_stable = portfolio.loc[row_stable]['free'].values[0]
                 
-                amount_volatile_floor = my_floor(amount_stable/ohlcv_df['close'][-1], 3)
-                if (amount_volatile_floor >= 0.001) and (amount_volatile_floor*ohlcv_df['close'][-1] >= 10):
-                    order = exchange.create_order(symbol, 'limit', 'buy', amount_volatile_floor, ohlcv_df['close'][-1])
+                price_volatile = ohlcv_df['close'][-1] - price_offset*(ohlcv_df['close'][-1] - ohlcv_df['open'][-1])
+                amount_volatile_floor = my_floor(amount_stable/price_volatile, 3)
+                if (amount_volatile_floor >= 0.001) and (amount_volatile_floor*price_volatile >= 10):
+                    order = exchange.create_order(symbol, 'limit', 'buy', amount_volatile_floor, price_volatile)
                     print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Placed ' + symbol + ' buy limit order for ' + str(round(amount_stable,2)) + ' ' + str_stable + 
-                          ' at ' + str(round(ohlcv_df['close'][-1],2)) + ' ' + str_stable + ' (' + str(round(amount_stable/ohlcv_df['close'][-1],3)) + ' ' + str_volatile + ')')
+                          ' at ' + str(round(price_volatile,2)) + ' ' + str_stable + ' (' + str(round(amount_stable/price_volatile,3)) + ' ' + str_volatile + ')')
             
             # sell
             elif (ohlcv_df['close'][-1] < close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
                 row_volatile = portfolio.where(portfolio==str_volatile).dropna(how='all').index
                 amount_volatile = portfolio.loc[row_volatile]['free'].values[0]
                 amount_volatile_floor = my_floor(amount_volatile,3)
-                if (amount_volatile_floor >= 0.001) and (amount_volatile_floor*ohlcv_df['close'][-1] >= 10):
-                    order = exchange.create_order(symbol, 'limit', 'sell', amount_volatile_floor, ohlcv_df['close'][-1])
+                
+                price_volatile = ohlcv_df['close'][-1] + price_offset*(ohlcv_df['open'][-1] - ohlcv_df['close'][-1])
+                
+                if (amount_volatile_floor >= 0.001) and (amount_volatile_floor*price_volatile >= 10):
+                    order = exchange.create_order(symbol, 'limit', 'sell', amount_volatile_floor, price_volatile)
                     print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Placed ' + symbol + ' sell limit order for ' + str(amount_volatile_floor) + ' ' + str_stable + 
-                          ' at ' + str(round(ohlcv_df['close'][-1],2)) + ' ' + str_stable + ' ($' + str(round(amount_volatile_floor*ohlcv_df['close'][-1],2)) + ')')
+                          ' at ' + str(round(price_volatile,2)) + ' ' + str_stable + ' ($' + str(round(amount_volatile_floor*price_volatile,2)) + ')')
             
             # hold
             elif (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
