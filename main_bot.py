@@ -29,7 +29,7 @@ def my_floor(a, precision=0):
     return np.true_divide(np.floor(a * 10**precision), 10**precision)
 
 
-def buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset):
+def place_buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset):
     row_stable = portfolio.where(portfolio==str_stable).dropna(how='all').index
                 
     # buy for stable amount equal to last sell
@@ -46,9 +46,11 @@ def buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset):
         order = exchange.create_order(symbol, 'limit', 'buy', amount_volatile_floor, price_volatile)
         print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Placed ' + symbol + ' buy limit order for ' + str(round(amount_stable,2)) + ' ' + str_stable + 
               ' at ' + str(round(price_volatile,2)) + ' ' + str_stable + ' (' + str(round(amount_stable/price_volatile,3)) + ' ' + str_volatile + ')')
+        
+    return order
 
         
-def sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset):
+def place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset):
     row_volatile = portfolio.where(portfolio==str_volatile).dropna(how='all').index
     amount_volatile = portfolio.loc[row_volatile]['free'].values[0]
     amount_volatile_floor = my_floor(amount_volatile,3)
@@ -59,6 +61,8 @@ def sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset):
         order = exchange.create_order(symbol, 'limit', 'sell', amount_volatile_floor, price_volatile*2)
         print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Placed ' + symbol + ' sell limit order for ' + str(amount_volatile_floor) + ' ' + str_stable + 
               ' at ' + str(round(price_volatile*2,2)) + ' ' + str_stable + ' ($' + str(round(amount_volatile_floor*price_volatile,2)) + ')')
+        
+    return order
 
 
 #%% Input parameters
@@ -212,11 +216,11 @@ while True:
             
             # buy
             if (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] < close_ema5[-2]):
-                buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
+                order = place_buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
             
             # sell
             elif (ohlcv_df['close'][-1] < close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
-                sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
+                order = place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
             
             # retry buy or hold
             elif (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
@@ -225,8 +229,7 @@ while True:
                 row_volatile = portfolio.where(portfolio==str_volatile).dropna(how='all').index
                 amount_volatile = portfolio.loc[row_volatile]['free'].values[0]
                 if amount_volatile <= 0.001: # initial purchase
-                    buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
-                
+                   order =  place_buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
                 else:
                     print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Hodl ' + symbol)
             
@@ -238,8 +241,7 @@ while True:
                 amount_stable = portfolio.loc[row_stable]['free'].values[0]
                 
                 if amount_stable <= 10.0:
-                    sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
-                
+                    order = place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
                 else:
                     print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : No assets available for ' + symbol)
             
