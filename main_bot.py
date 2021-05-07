@@ -58,9 +58,9 @@ def place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_off
     price_volatile = ohlcv_df['close'][-1] + price_offset*(ohlcv_df['open'][-1] - ohlcv_df['close'][-1])
     
     if (amount_volatile_floor >= 0.001) and (amount_volatile_floor*price_volatile >= 10):
-        order = exchange.create_order(symbol, 'limit', 'sell', amount_volatile_floor, price_volatile*2)
+        order = exchange.create_order(symbol, 'limit', 'sell', amount_volatile_floor, price_volatile)
         print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Placed ' + symbol + ' sell limit order for ' + str(amount_volatile_floor) + ' ' + str_stable + 
-              ' at ' + str(round(price_volatile*2,2)) + ' ' + str_stable + ' ($' + str(round(amount_volatile_floor*price_volatile,2)) + ')')
+              ' at ' + str(round(price_volatile,2)) + ' ' + str_stable + ' ($' + str(round(amount_volatile_floor*price_volatile,2)) + ')')
         
     return order
 
@@ -202,12 +202,12 @@ while True:
                     order_book.loc[order_book_index, 'status'] = 'closed'
                     order_book.to_csv('order_book_' + re.sub(r'[^\w]', '', symbol) + '.csv')
                     
-                    if order_book.loc['order_book_index'] == 'buy':
-                        print('Buy order ' + str(round(order_book.loc[order_book_index, 'id'], 2)) + ' for ' + 
-                              str(round(order_book.loc[order_book_index, 'price']*order_book.loc[order_book_index, 'amount'], 2)) + ' ' + str_stable + ' was closed successfully.')
+                    if order_book.loc[order_book_index, 'side'].values[0] == 'buy':
+                        print('Buy order ' + str(order_book.loc[order_book_index, 'id'].values[0]) + ' for ' + 
+                              str(round(order_book.loc[order_book_index, 'price'].values[0]*order_book.loc[order_book_index, 'amount'].values[0], 2)) + ' ' + str_stable + ' was closed successfully.')
                     else:
-                        print('Sell order ' + str(round(order_book.loc[order_book_index, 'id'], 2)) + ' for ' + 
-                              str(round(order_book.loc[order_book_index, 'price']*order_book.loc[order_book_index, 'amount'], 2)) + ' ' + str_volatile + ' was closed successfully.')
+                        print('Sell order ' + str(round(order_book.loc[order_book_index, 'id'].values[0], 2)) + ' for ' + 
+                              str(round(order_book.loc[order_book_index, 'price'].values[0]*order_book.loc[order_book_index, 'amount'].values[0], 2)) + ' ' + str_volatile + ' was closed successfully.')
             
             
             #%% Place orders if criterium is met
