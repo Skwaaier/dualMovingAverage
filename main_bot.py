@@ -84,10 +84,10 @@ exchange = ccxt.binance({
     })
 # exchange.set_sandbox_mode(True) # enabled sandbox
 
+logFile = 'log.out'
+
 # Maximum number of retries if the connection to the exchange fails
 numberOfRetries = 10
-
-logFile = 'log.out'
 logging.basicConfig(filename=logFile, level=logging.ERROR)
 
 
@@ -111,7 +111,19 @@ for symbol in symbol_dict.keys():
     
         ohlcv_df = pd.DataFrame(ohlcv_data, index = ohlcv_timestamps, columns = ['open', 'high', 'low', 'close', 'volume'])
         ohlcv_df.to_csv('historical_data_' + re.sub(r'[^\w]', '', symbol) + '.csv')
+
+if not os.path.isfile('portfolio.csv'):
+    portfolio_df = pd.DataFrame()
+    portfolio_df.to_csv('portfolio.csv')
     
+if not os.path.isfile('portfolio_usdt.csv'):
+    portfolio_usdt_df = pd.DataFrame()
+    portfolio_usdt_df.to_csv('portfolio_usdt.csv')
+    
+if not os.path.isfile('portfolio_usdt_relative.csv'):
+    portfolio_usdt_relative_df = pd.DataFrame()
+    portfolio_usdt_relative_df.to_csv('portfolio_usdt_relative.csv')
+
 
 #%% Load remote data each minute
 
@@ -130,6 +142,7 @@ while True:
             try:
                 # each ohlcv candle is a list of [ timestamp, open, high, low, close, volume ]
                 ohlcv = exchange.fetch_ohlcv(symbol, timeframe)
+                tickers = exchange.fetchTickers()
                 break
             except (ccxt.NetworkError, HTTPError):
                 typ, val, tb = sys.exc_info()
@@ -166,14 +179,58 @@ while True:
             except:
                 raise ValueError('Lag has become to big. Consider reinitiating historical data file with the most recent data.') 
             
-            # Load portfolio
+            #%%# Load portfolio
+            
             portfolio = pd.DataFrame(exchange.fetch_balance()['info']['balances'])
             portfolio['free'] = [float(price) for price in portfolio['free']]
             portfolio['locked'] = [float(price) for price in portfolio['locked']]
             portfolio['total'] = portfolio['free'] + portfolio['locked']
             # portfolio = portfolio[(portfolio.select_dtypes(include=['number']) != 0).any(1)] # filter zero values
-                        
-            # Load local order book
+            
+            # Update local portfolio
+            portfolio_df = pd.read_csv('portfolio.csv', index_col=0)
+            as_list = portfolio_df.index.to_list()
+            portfolio_df.index = [pd.Timestamp(x) for x in as_list]
+            
+            new_portfolio_values = portfolio[(portfolio.select_dtypes(include=['number']) != 0).any(1)]
+            portfolio_df.loc[ohlcv_df.index[-1], new_portfolio_values['asset']] = new_portfolio_values['total'].values
+            
+            # portfolio_df.loc[ohlcv_df.index[-1], portfolio['asset']] = portfolio['total'].values
+            portfolio_df.to_csv('portfolio.csv')
+            
+            # Update USDT based portfolio
+            portfolio_usdt_df = pd.read_csv('portfolio_usdt.csv', index_col=0)
+            as_list = portfolio_usdt_df.index.to_list()
+            portfolio_usdt_df.index = [pd.Timestamp(x) for x in as_list]
+            
+            portfolio_asset_list = portfolio_df.columns.to_list()
+            exclude_asset_list = ['USDT', 'EON', 'ADD', 'MEETONE', 'ATD', 'EOP']
+            portfolio_asset_list = [x for x in portfolio_asset_list if x not in exclude_asset_list]
+            tickers_string = [x + '/USDT' for x in portfolio_asset_list]
+            
+            tickers_bid = {}
+            for ticker in tickers_string:
+                tickers_bid[ticker[:-5]] = tickers[ticker]['bid']
+            
+            for ticker in tickers_bid.keys():
+                portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker] = tickers_bid[ticker]*portfolio_df.loc[ohlcv_df.index[-1], ticker]
+            portfolio_usdt_df.loc[ohlcv_df.index[-1], 'USDT'] = portfolio_df.loc[ohlcv_df.index[-1], 'USDT']
+            portfolio_usdt_df.to_csv('portfolio_usdt.csv')
+            
+            # Calculate relative change
+            portfolio_usdt_relative_df = pd.read_csv('portfolio_usdt_relative.csv', index_col=0)
+            as_list = portfolio_usdt_relative_df.index.to_list()
+            portfolio_usdt_relative_df.index = [pd.Timestamp(x) for x in as_list]
+            
+            if len(portfolio_usdt_df) > 1:
+                for ticker in portfolio_usdt_df.columns.to_list():
+                    new_value = portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker]
+                    old_value = portfolio_usdt_df.loc[ohlcv_df.index[-2], ticker]
+                    portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = round((new_value - old_value)/new_value * 100,2)
+                portfolio_usdt_df.to_csv('portfolio_usdt_relative.csv')
+        
+            
+            #%% Load local order book
             order_book = pd.read_csv('order_book_' + re.sub(r'[^\w]', '', symbol) + '.csv', index_col=0)
             
             # Load and cancel open orders
