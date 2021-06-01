@@ -71,7 +71,7 @@ def place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_off
 #%% Input parameters
 
 # Define coin pairs and associated time frame
-symbol_dict = {'ADA/USDT' : ['1d', 2], 'ETH/USDT' : ['1d', 5]} # {'volatile/stable' : ['timeframe', decimals]}
+symbol_dict = {'ADA/USDT' : ['1d', 2], 'ETH/USDT' : ['1d', 5], 'BTC/USDT' : ['1d', 6]} # {'volatile/stable' : ['timeframe', decimals]}
 
 # Relative offset for limit orders (price = close +/- price_offset*(close - open))
 price_offset = 0.25
@@ -96,6 +96,9 @@ logging.basicConfig(filename=logFile, level=logging.ERROR)
 
 #%% Initialisation
 
+print_count = 0
+placed_sell = {}
+
 for symbol in symbol_dict.keys():
     
     timeframe = symbol_dict[symbol][0]
@@ -114,6 +117,8 @@ for symbol in symbol_dict.keys():
     
         ohlcv_df = pd.DataFrame(ohlcv_data, index = ohlcv_timestamps, columns = ['open', 'high', 'low', 'close', 'volume'])
         ohlcv_df.to_csv('historical_data_' + re.sub(r'[^\w]', '', symbol) + '.csv')
+        
+    placed_sell[symbol] = False
 
 if not os.path.isfile('portfolio.csv'):
     portfolio_df = pd.DataFrame()
@@ -126,7 +131,7 @@ if not os.path.isfile('portfolio_usdt.csv'):
 if not os.path.isfile('portfolio_usdt_relative.csv'):
     portfolio_usdt_relative_df = pd.DataFrame()
     portfolio_usdt_relative_df.to_csv('portfolio_usdt_relative.csv')
-
+    
 
 #%% Load remote data each minute
 
@@ -173,6 +178,8 @@ while True:
         
         #%% Actions if last remote date is more recent than last date of local version
         if ohlcv_df.index[-1] > pd.Timestamp(local_history_df.index[-1]):
+            
+            # print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : found new ohlcv')
             
             # Append historical data 
             try:
@@ -224,6 +231,7 @@ while True:
                             print('Buy order ' + str(order_book.loc[order_book_index, 'id'].values[0]) + ' (' + symbol + ') for ' + 
                                   str(round(order_book.loc[order_book_index, 'price'].values[0]*order_book.loc[order_book_index, 'amount'].values[0], 2)) + ' ' + str_stable + ' was closed successfully.')
                         else:
+                            placed_sell[symbol] = False
                             print('Sell order ' + str(order_book.loc[order_book_index, 'id'].values[0]) + ' (' + symbol + ') for ' + 
                                   str(round(order_book.loc[order_book_index, 'amount'].values[0], 5)) + ' ' + str_volatile + ' was closed successfully.')
             
@@ -246,8 +254,6 @@ while True:
             
             zero_indexes = portfolio_df.columns.difference(new_portfolio_values['asset'])
             portfolio_df.loc[ohlcv_df.index[-1], zero_indexes] = 0.0
-            
-            portfolio_df.loc[ohlcv_df.index[-1], 'BTC'] = 0.00228336
             portfolio_df.to_csv('portfolio.csv')
             
             # Update USDT based portfolio
@@ -267,22 +273,25 @@ while True:
             for ticker in tickers_bid.keys():
                 portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker] = tickers_bid[ticker]*portfolio_df.loc[ohlcv_df.index[-1], ticker]
             portfolio_usdt_df.loc[ohlcv_df.index[-1], 'USDT'] = portfolio_df.loc[ohlcv_df.index[-1], 'USDT']
-            portfolio_usdt_df.loc[ohlcv_df.index[-1], 'Total'] = portfolio_usdt_df.loc[ohlcv_df.index[-1]].iloc[:-1].sum()
+            portfolio_usdt_df.loc[ohlcv_df.index[-1], 'Total'] = portfolio_usdt_df.loc[ohlcv_df.index[-1], tickers_bid.keys()].sum() + portfolio_df.loc[ohlcv_df.index[-1], 'USDT']
             portfolio_usdt_df.to_csv('portfolio_usdt.csv')
             
             # Calculate relative change
             portfolio_usdt_relative_df = pd.read_csv('portfolio_usdt_relative.csv', index_col=0)
             as_list = portfolio_usdt_relative_df.index.to_list()
             portfolio_usdt_relative_df.index = [pd.Timestamp(x) for x in as_list]
-            
+                     
             if len(portfolio_usdt_df) > 1:
-                for ticker in portfolio_usdt_df.columns.to_list():
+                for ticker in portfolio_usdt_df.columns.to_list(): 
                     new_value = portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker]
-                    old_value = portfolio_usdt_df.loc[portfolio_usdt_df.index[-2], ticker]
-                    if new_value <= 0.01:
+                    
+                    if (new_value <= 0.01) or (len(portfolio_usdt_df[ticker]) - portfolio_usdt_df[ticker].isnull().sum() <= 1): # smaller than $ 0.01 or only one entry
                         portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = 0.0
                     else:
-                        portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = round((new_value - old_value)/new_value * 100,2)
+                        old_non_zero_index = portfolio_usdt_df[ticker][portfolio_usdt_df[ticker] >= 0.01].index[-2]
+                        old_non_zero_value = portfolio_usdt_df.loc[old_non_zero_index, ticker]
+                        portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = round((new_value - old_non_zero_value)/new_value * 100,2)
+                
                 portfolio_usdt_relative_df.to_csv('portfolio_usdt_relative.csv')
             
             
@@ -292,22 +301,30 @@ while True:
             
             # buy
             if (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] < close_ema5[-2]):
-                print('buy')
-                order = place_buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
+                
+                placed_sell[symbol] = False # reset
+                
+                row_volatile = portfolio.where(portfolio==str_volatile).dropna(how='all').index
+                amount_volatile = portfolio.loc[row_volatile]['free'].values[0]
+                if amount_volatile <= 10**-decimals: # not holding the current asset
+                    order = place_buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
+                else:
+                    print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Hold ' + symbol)
             
             # sell
             elif (ohlcv_df['close'][-1] < close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
-                print('sell')
                 order = place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
+                placed_sell[symbol] = True
             
             # retry buy or hold
             elif (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
+                
+                placed_sell[symbol] = False # reset
                 
                 # initial purchase or previous buy was unsuccesful
                 row_volatile = portfolio.where(portfolio==str_volatile).dropna(how='all').index
                 amount_volatile = portfolio.loc[row_volatile]['free'].values[0]
                 if amount_volatile <= 10**-decimals: # initial purchase
-                    print('initial buy')
                     order =  place_buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
                 else:
                     print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Hold ' + symbol)
@@ -319,8 +336,7 @@ while True:
                 row_stable = portfolio.where(portfolio==str_stable).dropna(how='all').index
                 amount_stable = portfolio.loc[row_stable]['free'].values[0]
                 
-                if amount_stable <= 10.0:
-                    print('retry sell')
+                if (amount_stable <= 10.0) or (placed_sell[symbol] == True):
                     order = place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
                 else:
                     print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : No assets available for ' + symbol)
@@ -336,50 +352,57 @@ while True:
             
             #%% Plot portolio on display
             
-            # Points to pic directory
-            figDir = 'fig'
-            fontDir = 'fonts'
+            print_count += 1
             
-            try:
-                # Display init, clear
-                epd = epd2in13b_V3.EPD()
-                epd.init()
-                epd.Clear()
-                time.sleep(1)
+            if print_count == len(symbol_dict):
             
-                w = epd.height
-                h = epd.width
+                # Points to pic directory
+                figDir = 'fig'
+                fontDir = 'fonts'
                 
-                font14 = ImageFont.truetype(os.path.join(fontDir, 'OpenSans-Regular.ttf'), 14)
+                try:
+                    # Display init, clear
+                    epd = epd2in13b_V3.EPD()
+                    epd.init()
+                    epd.Clear()
+                    time.sleep(5)
                 
-                # Drawing on the Horizontal image
-                HBlackimage = Image.new('1', (epd.height, epd.width), 255)               
-                HRYimage = Image.new('1', (epd.height, epd.width), 255)               
-                drawblack = ImageDraw.Draw(HBlackimage)
-                drawry = ImageDraw.Draw(HRYimage)
-                drawblack.text((10, 0),  'BTC: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'BTC'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'BTC'],2)) + '%)', font = font14, fill = 0)
-                drawblack.text((10, 20), 'ETH: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'ETH'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'ETH'],2)) + '%)', font = font14, fill = 0)
-                drawblack.text((10, 40), 'ADA: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'ADA'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'ADA'],2)) + '%)', font = font14, fill = 0)
-                drawblack.text((10, 60), 'USDT: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'USDT'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'USDT'],2)) + '%)', font = font14, fill = 0)
-                drawblack.text((10, 80), 'Total: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'Total'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'Total'],2)) + '%)', font = font14, fill = 0)
-                HBlackimage = HBlackimage.transpose(Image.ROTATE_180)
-                HRYimage = HRYimage.transpose(Image.ROTATE_180)
-                epd.display(epd.getbuffer(HBlackimage), epd.getbuffer(HRYimage))
-                                    
-                logging.info("Goto Sleep...")
-                epd.sleep()
-                
-            except IOError as e:
-                print(e)
-                
-            except KeyboardInterrupt:    
-                logging.info("ctrl + c:")
-                epd.init()
-                epd.Clear()
-                epd2in13b_V3.epdconfig.module_exit()   
-                exit()
+                    w = epd.height
+                    h = epd.width
+                    
+                    font14 = ImageFont.truetype(os.path.join(fontDir, 'OpenSans-Regular.ttf'), 14)
+                    
+                    # Drawing on the Horizontal image
+                    HBlackimage = Image.new('1', (epd.height, epd.width), 255)               
+                    HRYimage = Image.new('1', (epd.height, epd.width), 255)               
+                    drawblack = ImageDraw.Draw(HBlackimage)
+                    drawry = ImageDraw.Draw(HRYimage)
+                    drawblack.text((10, 0),  'BTC: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'BTC'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'BTC'],2)) + '%)', font = font14, fill = 0)
+                    drawblack.text((10, 20), 'ETH: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'ETH'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'ETH'],2)) + '%)', font = font14, fill = 0)
+                    drawblack.text((10, 40), 'ADA: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'ADA'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'ADA'],2)) + '%)', font = font14, fill = 0)
+                    drawblack.text((10, 60), 'USDT: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'USDT'],2)), font = font14, fill = 0)
+                    drawblack.text((10, 80), 'Total: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'Total'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'Total'],2)) + '%)', font = font14, fill = 0)
+                    HBlackimage = HBlackimage.transpose(Image.ROTATE_180)
+                    HRYimage = HRYimage.transpose(Image.ROTATE_180)
+                    epd.display(epd.getbuffer(HBlackimage), epd.getbuffer(HRYimage))
+    
+                    logging.info("Goto Sleep...")
+                    epd.sleep()
+                    
+                    print_count = 0
+                    
+                except IOError as e:
+                    print(e)
+                    
+                except KeyboardInterrupt:    
+                    logging.info("ctrl + c:")
+                    epd.init()
+                    epd.Clear()
+                    epd2in13b_V3.epdconfig.module_exit()   
+                    exit()
             
             
     #%% Wait for one minute before checking for changes
     
+    # print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : one-minute loop completed')
     time.sleep(60.0 - ((time.time() - start_time) % 60.0))
