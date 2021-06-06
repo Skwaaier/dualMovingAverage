@@ -334,7 +334,7 @@ while True:
                     for ticker in portfolio_usdt_df.columns.to_list(): 
                         new_value = portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker]
                         
-                        if (new_value <= 0.01) or (len(portfolio_usdt_df[ticker]) - portfolio_usdt_df[ticker].isnull().sum() <= 1): # smaller than $ 0.01 or only one entry
+                        if (new_value <= 0.1) or (len(portfolio_usdt_df[ticker]) - portfolio_usdt_df[ticker].isnull().sum() <= 1): # smaller than $ 0.01 or only one entry
                             portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = 0.0
                         else:
                             old_non_zero_index = portfolio_usdt_df[ticker][portfolio_usdt_df[ticker] >= 0.01].index[-2]
