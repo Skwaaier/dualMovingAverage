@@ -2,7 +2,9 @@
 """
 Created on Sun Apr 18 18:02:44 2021
 
-Crypto trading bot using closing price and exponential moving average intersections
+Crypto trading bot using closing price and exponential moving average intersections.
+
+Starting point is a portfolio with crypto assets. Use symbol_dict to set the trading pairs.
 
 @author: tgdon
 """
@@ -33,15 +35,14 @@ def my_floor(a, precision=0):
 
 
 def place_buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset):
-    row_stable = portfolio.where(portfolio==str_stable).dropna(how='all').index
-                
+
     # buy for stable amount equal to last sell
     if not order_book[(order_book['side'] == 'sell')].empty and (order_book[(order_book['side'] == 'sell')].iloc[-1]['status'] == 'closed'):
         last_sell_stable = order_book[(order_book['side'] == 'sell')].iloc[-1]
         amount_stable = last_sell_stable['price']*last_sell_stable['filled']
     # no previous sell in order_book
     else:
-        amount_stable = portfolio.loc[row_stable]['free'].values[0]
+        raise ValueError('No previous sell order has been found for ' + symbol + '. Unable to determine buy amount.')
     
     price_volatile = ohlcv_df['close'][-1] - price_offset*(ohlcv_df['close'][-1] - ohlcv_df['open'][-1])
     amount_volatile_floor = my_floor(amount_stable/price_volatile, decimals)
@@ -97,7 +98,6 @@ logging.basicConfig(filename=logFile, level=logging.ERROR)
 #%% Initialisation
 
 print_count = 0
-placed_sell = {}
 
 for symbol in symbol_dict.keys():
     
@@ -118,8 +118,6 @@ for symbol in symbol_dict.keys():
         ohlcv_df = pd.DataFrame(ohlcv_data, index = ohlcv_timestamps, columns = ['open', 'high', 'low', 'close', 'volume'])
         ohlcv_df.to_csv('historical_data_' + re.sub(r'[^\w]', '', symbol) + '.csv')
         
-    placed_sell[symbol] = False
-
 if not os.path.isfile('portfolio.csv'):
     portfolio_df = pd.DataFrame()
     portfolio_df.to_csv('portfolio.csv')
@@ -179,7 +177,7 @@ while True:
         #%% Actions if last remote date is more recent than last date of local version
         if ohlcv_df.index[-1] > pd.Timestamp(local_history_df.index[-1]):
             
-            # print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : found new ohlcv')
+            time.sleep(10)
             
             # Append historical data 
             try:
@@ -231,7 +229,6 @@ while True:
                             print('Buy order ' + str(order_book.loc[order_book_index, 'id'].values[0]) + ' (' + symbol + ') for ' + 
                                   str(round(order_book.loc[order_book_index, 'price'].values[0]*order_book.loc[order_book_index, 'amount'].values[0], 2)) + ' ' + str_stable + ' was closed successfully.')
                         else:
-                            placed_sell[symbol] = False
                             print('Sell order ' + str(order_book.loc[order_book_index, 'id'].values[0]) + ' (' + symbol + ') for ' + 
                                   str(round(order_book.loc[order_book_index, 'amount'].values[0], 5)) + ' ' + str_volatile + ' was closed successfully.')
             
@@ -242,7 +239,6 @@ while True:
             portfolio['free'] = [float(price) for price in portfolio['free']]
             portfolio['locked'] = [float(price) for price in portfolio['locked']]
             portfolio['total'] = portfolio['free'] + portfolio['locked']
-            # portfolio = portfolio[(portfolio.select_dtypes(include=['number']) != 0).any(1)] # filter zero values
             
             # Update local portfolio
             portfolio_df = pd.read_csv('portfolio.csv', index_col=0)
@@ -297,12 +293,12 @@ while True:
             
             #%% Place orders if criterium is met
             
+            order_book = pd.read_csv('order_book_' + re.sub(r'[^\w]', '', symbol) + '.csv', index_col=0)
+            
             order = dict()
             
             # buy
             if (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] < close_ema5[-2]):
-                
-                placed_sell[symbol] = False # reset
                 
                 row_volatile = portfolio.where(portfolio==str_volatile).dropna(how='all').index
                 amount_volatile = portfolio.loc[row_volatile]['free'].values[0]
@@ -314,32 +310,25 @@ while True:
             # sell
             elif (ohlcv_df['close'][-1] < close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
                 order = place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
-                placed_sell[symbol] = True
             
             # retry buy or hold
             elif (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
                 
-                placed_sell[symbol] = False # reset
-                
-                # initial purchase or previous buy was unsuccesful
-                row_volatile = portfolio.where(portfolio==str_volatile).dropna(how='all').index
-                amount_volatile = portfolio.loc[row_volatile]['free'].values[0]
-                if amount_volatile <= 10**-decimals: # initial purchase
+                if (order_book.iloc[-1]['side'] == 'buy') and (order_book.iloc[-1]['status'] == 'cancelled'):
                     order =  place_buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
                 else:
                     print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : Hold ' + symbol)
             
             # retry sell or no assets available
-            else:
-                
-                # initial sell or previous sell was unsuccesful
-                row_stable = portfolio.where(portfolio==str_stable).dropna(how='all').index
-                amount_stable = portfolio.loc[row_stable]['free'].values[0]
-                
-                if (amount_stable <= 10.0) or (placed_sell[symbol] == True):
+            elif (ohlcv_df['close'][-1] < close_ema5[-1]) & (ohlcv_df['close'][-2] < close_ema5[-2]):
+                if (order_book.iloc[-1]['side'] == 'sell') and (order_book.iloc[-1]['status'] == 'cancelled'):
                     order = place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
                 else:
                     print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : No assets available for ' + symbol)
+                    
+            # encountered unknown situation
+            else:
+                raise ValueError('Encountered unknown situation.')
             
             # save order to order_book dataframe
             if order:
