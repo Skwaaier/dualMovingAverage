@@ -97,7 +97,7 @@ logging.basicConfig(filename=logFile, level=logging.ERROR)
 
 #%% Initialisation
 
-print_count = 0
+symbol_count = 0
 
 for symbol in symbol_dict.keys():
     
@@ -240,56 +240,6 @@ while True:
             portfolio['locked'] = [float(price) for price in portfolio['locked']]
             portfolio['total'] = portfolio['free'] + portfolio['locked']
             
-            # Update local portfolio
-            portfolio_df = pd.read_csv('portfolio.csv', index_col=0)
-            as_list = portfolio_df.index.to_list()
-            portfolio_df.index = [pd.Timestamp(x) for x in as_list]
-            
-            new_portfolio_values = portfolio[(portfolio.select_dtypes(include=['number']) != 0).any(1)]
-            portfolio_df.loc[ohlcv_df.index[-1], new_portfolio_values['asset']] = new_portfolio_values['total'].values
-            
-            zero_indexes = portfolio_df.columns.difference(new_portfolio_values['asset'])
-            portfolio_df.loc[ohlcv_df.index[-1], zero_indexes] = 0.0
-            portfolio_df.to_csv('portfolio.csv')
-            
-            # Update USDT based portfolio
-            portfolio_usdt_df = pd.read_csv('portfolio_usdt.csv', index_col=0)
-            as_list = portfolio_usdt_df.index.to_list()
-            portfolio_usdt_df.index = [pd.Timestamp(x) for x in as_list]
-            
-            portfolio_asset_list = portfolio_df.columns.to_list()
-            exclude_asset_list = ['USDT', 'EON', 'ADD', 'MEETONE', 'ATD', 'EOP']
-            portfolio_asset_list = [x for x in portfolio_asset_list if x not in exclude_asset_list]
-            tickers_string = [x + '/USDT' for x in portfolio_asset_list]
-            
-            tickers_bid = {}
-            for ticker in tickers_string:
-                tickers_bid[ticker[:-5]] = tickers[ticker]['bid']
-            
-            for ticker in tickers_bid.keys():
-                portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker] = tickers_bid[ticker]*portfolio_df.loc[ohlcv_df.index[-1], ticker]
-            portfolio_usdt_df.loc[ohlcv_df.index[-1], 'USDT'] = portfolio_df.loc[ohlcv_df.index[-1], 'USDT']
-            portfolio_usdt_df.loc[ohlcv_df.index[-1], 'Total'] = portfolio_usdt_df.loc[ohlcv_df.index[-1], tickers_bid.keys()].sum() + portfolio_df.loc[ohlcv_df.index[-1], 'USDT']
-            portfolio_usdt_df.to_csv('portfolio_usdt.csv')
-            
-            # Calculate relative change
-            portfolio_usdt_relative_df = pd.read_csv('portfolio_usdt_relative.csv', index_col=0)
-            as_list = portfolio_usdt_relative_df.index.to_list()
-            portfolio_usdt_relative_df.index = [pd.Timestamp(x) for x in as_list]
-                     
-            if len(portfolio_usdt_df) > 1:
-                for ticker in portfolio_usdt_df.columns.to_list(): 
-                    new_value = portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker]
-                    
-                    if (new_value <= 0.01) or (len(portfolio_usdt_df[ticker]) - portfolio_usdt_df[ticker].isnull().sum() <= 1): # smaller than $ 0.01 or only one entry
-                        portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = 0.0
-                    else:
-                        old_non_zero_index = portfolio_usdt_df[ticker][portfolio_usdt_df[ticker] >= 0.01].index[-2]
-                        old_non_zero_value = portfolio_usdt_df.loc[old_non_zero_index, ticker]
-                        portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = round((new_value - old_non_zero_value)/new_value * 100,2)
-                
-                portfolio_usdt_relative_df.to_csv('portfolio_usdt_relative.csv')
-            
             
             #%% Place orders if criterium is met
             
@@ -299,7 +249,6 @@ while True:
             
             # buy
             if (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] < close_ema5[-2]):
-                
                 row_volatile = portfolio.where(portfolio==str_volatile).dropna(how='all').index
                 amount_volatile = portfolio.loc[row_volatile]['free'].values[0]
                 if amount_volatile <= 10**-decimals: # not holding the current asset
@@ -313,7 +262,6 @@ while True:
             
             # retry buy or hold
             elif (ohlcv_df['close'][-1] >= close_ema5[-1]) & (ohlcv_df['close'][-2] >= close_ema5[-2]):
-                
                 if (order_book.iloc[-1]['side'] == 'buy') and (order_book.iloc[-1]['status'] == 'cancelled'):
                     order =  place_buy_order(exchange, order, portfolio, order_book, ohlcv_df, price_offset)
                 else:
@@ -339,11 +287,64 @@ while True:
                 order_book.to_csv('order_book_' + re.sub(r'[^\w]', '', symbol) + '.csv')
           
             
-            #%% Plot portolio on display
+            #%% Update portfolio files
             
-            print_count += 1
+            symbol_count += 1
             
-            if print_count == len(symbol_dict):
+            if symbol_count == len(symbol_dict):
+            
+                # Update local portfolio
+                portfolio_df = pd.read_csv('portfolio.csv', index_col=0)
+                as_list = portfolio_df.index.to_list()
+                portfolio_df.index = [pd.Timestamp(x) for x in as_list]
+                
+                new_portfolio_values = portfolio[(portfolio.select_dtypes(include=['number']) != 0).any(1)]
+                portfolio_df.loc[ohlcv_df.index[-1], new_portfolio_values['asset']] = new_portfolio_values['total'].values
+                
+                zero_indexes = portfolio_df.columns.difference(new_portfolio_values['asset'])
+                portfolio_df.loc[ohlcv_df.index[-1], zero_indexes] = 0.0
+                portfolio_df.to_csv('portfolio.csv')
+                
+                # Update USDT based portfolio
+                portfolio_usdt_df = pd.read_csv('portfolio_usdt.csv', index_col=0)
+                as_list = portfolio_usdt_df.index.to_list()
+                portfolio_usdt_df.index = [pd.Timestamp(x) for x in as_list]
+                
+                portfolio_asset_list = portfolio_df.columns.to_list()
+                exclude_asset_list = ['USDT', 'EON', 'ADD', 'MEETONE', 'ATD', 'EOP']
+                portfolio_asset_list = [x for x in portfolio_asset_list if x not in exclude_asset_list]
+                tickers_string = [x + '/USDT' for x in portfolio_asset_list]
+                
+                tickers_bid = {}
+                for ticker in tickers_string:
+                    tickers_bid[ticker[:-5]] = tickers[ticker]['bid']
+                
+                for ticker in tickers_bid.keys():
+                    portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker] = tickers_bid[ticker]*portfolio_df.loc[ohlcv_df.index[-1], ticker]
+                portfolio_usdt_df.loc[ohlcv_df.index[-1], 'USDT'] = portfolio_df.loc[ohlcv_df.index[-1], 'USDT']
+                portfolio_usdt_df.loc[ohlcv_df.index[-1], 'Total'] = portfolio_usdt_df.loc[ohlcv_df.index[-1], tickers_bid.keys()].sum() + portfolio_df.loc[ohlcv_df.index[-1], 'USDT']
+                portfolio_usdt_df.to_csv('portfolio_usdt.csv')
+                
+                # Calculate relative change
+                portfolio_usdt_relative_df = pd.read_csv('portfolio_usdt_relative.csv', index_col=0)
+                as_list = portfolio_usdt_relative_df.index.to_list()
+                portfolio_usdt_relative_df.index = [pd.Timestamp(x) for x in as_list]
+                         
+                if len(portfolio_usdt_df) > 1:
+                    for ticker in portfolio_usdt_df.columns.to_list(): 
+                        new_value = portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker]
+                        
+                        if (new_value <= 0.01) or (len(portfolio_usdt_df[ticker]) - portfolio_usdt_df[ticker].isnull().sum() <= 1): # smaller than $ 0.01 or only one entry
+                            portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = 0.0
+                        else:
+                            old_non_zero_index = portfolio_usdt_df[ticker][portfolio_usdt_df[ticker] >= 0.01].index[-2]
+                            old_non_zero_value = portfolio_usdt_df.loc[old_non_zero_index, ticker]
+                            portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = round((new_value - old_non_zero_value)/new_value * 100,2)
+                    
+                    portfolio_usdt_relative_df.to_csv('portfolio_usdt_relative.csv')
+                    
+            
+                #%% Plot portfolio on display
             
                 # Points to pic directory
                 figDir = 'fig'
@@ -393,5 +394,4 @@ while True:
             
     #%% Wait for one minute before checking for changes
     
-    # print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) + ' : one-minute loop completed')
     time.sleep(60.0 - ((time.time() - start_time) % 60.0))
