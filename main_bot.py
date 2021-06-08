@@ -97,8 +97,6 @@ logging.basicConfig(filename=logFile, level=logging.ERROR)
 
 #%% Initialisation
 
-symbol_count = 0
-
 for symbol in symbol_dict.keys():
     
     timeframe = symbol_dict[symbol][0]
@@ -136,6 +134,8 @@ if not os.path.isfile('portfolio_usdt_relative.csv'):
 start_time = time.time()
 
 while True:
+    
+    symbol_count = 0
     
     for symbol in symbol_dict.keys():
         
