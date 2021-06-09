@@ -205,12 +205,12 @@ while True:
                         order_book.loc[order_book_index, 'status'] = 'cancelled'
                         order_book.to_csv('order_book_' + re.sub(r'[^\w]', '', symbol) + '.csv')
                         
-                        if order_book.loc['order_book_index'] == 'buy':
-                            print('Buy order ' + str(order_book.loc[order_book_index, 'id']) + ' (' + symbol + ') for ' + 
-                                  str(round(order_book.loc[order_book_index, 'price']*order_book.loc[order_book_index, 'amount'], 2)) + ' ' + str_stable + ' was cancelled.')
+                        if order_book.loc[order_book_index, 'side'].values[0] == 'buy':
+                            print('Buy order ' + str(order_book.loc[order_book_index, 'id'].values[0]) + ' (' + symbol + ') for ' + 
+                                  str(round(order_book.loc[order_book_index, 'price'].values[0]*order_book.loc[order_book_index, 'amount'], 2)) + ' ' + str_stable + ' was cancelled.')
                         else:
-                            print('Sell order ' + str(order_book.loc[order_book_index, 'id']) + ' (' + symbol + ') for ' + 
-                                  str(round(order_book.loc[order_book_index, 'price']*order_book.loc[order_book_index, 'amount'], 2)) + ' ' + str_volatile + ' was cancelled.')
+                            print('Sell order ' + str(order_book.loc[order_book_index, 'id'].values[0]) + ' (' + symbol + ') for ' + 
+                                  str(round(order_book.loc[order_book_index, 'amount'].values[0], 5)) + ' ' + str_volatile + ' was cancelled.')
                             
             # Load closed orders
             closed_order_ids = [closed_order['id'] for closed_order in exchange.fetchClosedOrders(symbol)]
