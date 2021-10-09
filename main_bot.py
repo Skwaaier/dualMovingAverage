@@ -75,7 +75,7 @@ def place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_off
 symbol_dict = {'ADA/USDT' : ['1d', 2], 'ETH/USDT' : ['1d', 5], 'BTC/USDT' : ['1d', 6]} # {'volatile/stable' : ['timeframe', decimals]}
 
 # Relative offset for limit orders (price = close +/- price_offset*(close - open))
-price_offset = 0.25
+price_offset = 0.15
 
 # Connect to Binance
 exchange = ccxt.binance({
@@ -185,7 +185,7 @@ while True:
                 local_history_df = local_history_df.append(ohlcv_df.tail(lag_hours))
                 local_history_df.to_csv('historical_data_' + re.sub(r'[^\w]', '', symbol) + '.csv')
             except:
-                raise ValueError('Lag has become to big. Consider reinitiating historical data file with the most recent data.') 
+                raise ValueError('Lag has become to big. Consider reinitiating historical data file with the most recent data.')
             
                        
             #%% Load local order book
