@@ -18,8 +18,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 #%% Import data
 
-portfolio_usdt_df = pd.read_csv('portfolio_usdt.csv', index_col=0)
-portfolio_usdt_relative_df = pd.read_csv('portfolio_usdt_relative.csv', index_col=0)
+portfolio_eur_df = pd.read_csv('portfolio_eur.csv', index_col=0)
+portfolio_eur_relative_df = pd.read_csv('portfolio_eur_relative.csv', index_col=0)
 
 
 #%% Refresh display
@@ -44,11 +44,11 @@ try:
     HRYimage = Image.new('1', (epd.height, epd.width), 255)               
     drawblack = ImageDraw.Draw(HBlackimage)
     drawry = ImageDraw.Draw(HRYimage)
-    drawblack.text((10, 0),  'BTC: $' + str(round(portfolio_usdt_df.iloc[-1]['BTC'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.iloc[-1]['BTC'],2)) + '%)', font = font14, fill = 0)
-    drawblack.text((10, 20), 'ETH: $' + str(round(portfolio_usdt_df.iloc[-1]['ETH'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.iloc[-1]['ETH'],2)) + '%)', font = font14, fill = 0)
-    drawblack.text((10, 40), 'ADA: $' + str(round(portfolio_usdt_df.iloc[-1]['ADA'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.iloc[-1]['ADA'],2)) + '%)', font = font14, fill = 0)
-    drawblack.text((10, 60), 'USDT: $' + str(round(portfolio_usdt_df.iloc[-1]['USDT'],2)), font = font14, fill = 0)
-    drawblack.text((10, 80), 'Total: $' + str(round(portfolio_usdt_df.iloc[-1]['Total'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.iloc[-1]['Total'],2)) + '%)', font = font14, fill = 0)
+    drawblack.text((10, 0),  'BTC: €' + str(round(portfolio_eur_df.iloc[-1]['BTC'],2)) + ' ' + '(' + str(round(portfolio_eur_relative_df.iloc[-1]['BTC'],2)) + '%)', font = font14, fill = 0)
+    drawblack.text((10, 20), 'ETH: €' + str(round(portfolio_eur_df.iloc[-1]['ETH'],2)) + ' ' + '(' + str(round(portfolio_eur_relative_df.iloc[-1]['ETH'],2)) + '%)', font = font14, fill = 0)
+    drawblack.text((10, 40), 'ADA: €' + str(round(portfolio_eur_df.iloc[-1]['ADA'],2)) + ' ' + '(' + str(round(portfolio_eur_relative_df.iloc[-1]['ADA'],2)) + '%)', font = font14, fill = 0)
+    drawblack.text((10, 60), 'EUR: €' + str(round(portfolio_eur_df.iloc[-1]['EUR'],2)), font = font14, fill = 0)
+    drawblack.text((10, 80), 'Total: €' + str(round(portfolio_eur_df.iloc[-1]['Total'],2)) + ' ' + '(' + str(round(portfolio_eur_relative_df.iloc[-1]['Total'],2)) + '%)', font = font14, fill = 0)
     HBlackimage = HBlackimage.transpose(Image.ROTATE_180)
     HRYimage = HRYimage.transpose(Image.ROTATE_180)
     epd.display(epd.getbuffer(HBlackimage), epd.getbuffer(HRYimage))
