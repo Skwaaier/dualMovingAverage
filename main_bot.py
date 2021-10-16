@@ -72,13 +72,13 @@ def place_sell_order(exchange, order, portfolio, order_book, ohlcv_df, price_off
 #%% Input parameters
 
 # Define coin pairs and associated time frame
-symbol_dict = {'ADA/USDT' : ['1d', 2], 'ETH/USDT' : ['1d', 5], 'BTC/USDT' : ['1d', 6]} # {'volatile/stable' : ['timeframe', decimals]}
+symbol_dict = {'ADA/EUR' : ['1d', 5], 'ETH/EUR' : ['1d', 7], 'BTC/EUR' : ['1d', 7]} # {'volatile/stable' : ['timeframe', decimals]}
 
 # Relative offset for limit orders (price = close +/- price_offset*(close - open))
 price_offset = 0.15
 
-# Connect to Binance
-exchange = ccxt.binance({
+# Connect to Bitvavo
+exchange = ccxt.bitvavo({
     'apiKey' : credentials.api_key,
     'secret' : credentials.secret, 
     'options' : {
@@ -86,7 +86,6 @@ exchange = ccxt.binance({
         },
     'enableRateLimit': True
     })
-# exchange.set_sandbox_mode(True) # enabled sandbox
 
 logFile = 'log.out'
 
@@ -120,13 +119,13 @@ if not os.path.isfile('portfolio.csv'):
     portfolio_df = pd.DataFrame()
     portfolio_df.to_csv('portfolio.csv')
     
-if not os.path.isfile('portfolio_usdt.csv'):
-    portfolio_usdt_df = pd.DataFrame()
-    portfolio_usdt_df.to_csv('portfolio_usdt.csv')
+if not os.path.isfile('portfolio_eur.csv'):
+    portfolio_eur_df = pd.DataFrame()
+    portfolio_eur_df.to_csv('portfolio_eur.csv')
     
-if not os.path.isfile('portfolio_usdt_relative.csv'):
-    portfolio_usdt_relative_df = pd.DataFrame()
-    portfolio_usdt_relative_df.to_csv('portfolio_usdt_relative.csv')
+if not os.path.isfile('portfolio_eur_relative.csv'):
+    portfolio_eur_relative_df = pd.DataFrame()
+    portfolio_eur_relative_df.to_csv('portfolio_eur_relative.csv')
     
 
 #%% Load remote data each minute
@@ -195,11 +194,11 @@ while True:
             open_order_ids = [open_order['id'] for open_order in exchange.fetchOpenOrders(symbol)]
             
             for order_id in open_order_ids:
-                if int(order_id) in order_book['id'].values:
+                if order_id in order_book['id'].values:
                     
                     # open order was not filled
                     exchange.cancelOrder(order_id, symbol)
-                    order_book_index = order_book.loc[order_book.isin([int(open_order_ids[-1])]).any(axis=1)].index
+                    order_book_index = order_book.loc[order_book.isin([open_order_ids[-1]]).any(axis=1)].index
                     
                     if (order_book.loc[order_book_index, 'status'] == 'open').values[0]:
                         order_book.loc[order_book_index, 'status'] = 'cancelled'
@@ -213,11 +212,11 @@ while True:
                                   str(round(order_book.loc[order_book_index, 'amount'].values[0], 5)) + ' ' + str_volatile + ' was cancelled.')
                             
             # Load closed orders
-            closed_order_ids = [closed_order['id'] for closed_order in exchange.fetchClosedOrders(symbol)]
+            closed_order_ids = [closed_order['id'] for closed_order in exchange.fetchOrders(symbol) if closed_order['status'] == 'closed']
             
             for order_id in closed_order_ids:
-                if int(order_id) in order_book['id'].values:
-                    order_book_index = order_book.loc[order_book.isin([int(closed_order_ids[-1])]).any(axis=1)].index
+                if order_id in order_book['id'].values:
+                    order_book_index = order_book.loc[order_book.isin([closed_order_ids[-1]]).any(axis=1)].index
                     
                     # open order was filled
                     if (order_book.loc[order_book_index, 'status'] == 'open').values[0]:
@@ -235,9 +234,9 @@ while True:
             
             #%% Load portfolio
             
-            portfolio = pd.DataFrame(exchange.fetch_balance()['info']['balances'])
-            portfolio['free'] = [float(price) for price in portfolio['free']]
-            portfolio['locked'] = [float(price) for price in portfolio['locked']]
+            portfolio = pd.DataFrame(exchange.fetch_balance()['info'])
+            portfolio['free'] = [float(price) for price in portfolio['available']]
+            portfolio['locked'] = [float(price) for price in portfolio['inOrder']]
             portfolio['total'] = portfolio['free'] + portfolio['locked']
             
             
@@ -280,7 +279,7 @@ while True:
             
             # save order to order_book dataframe
             if order:
-                order_data = {'id': int(order['id']), 'side' : order['side'], 'price' : order['price'], 'amount' : order['amount'], 'filled' : order['filled'], 'status' : 'open'}
+                order_data = {'id': order['id'], 'side' : order['side'], 'price' : order['price'], 'amount' : order['amount'], 'filled' : order['filled'], 'status' : 'open'}
                 order_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                 save_order = pd.DataFrame(order_data, index = [order_time])
                 order_book = pd.concat([order_book, save_order])
@@ -299,49 +298,49 @@ while True:
                 portfolio_df.index = [pd.Timestamp(x) for x in as_list]
                 
                 new_portfolio_values = portfolio[(portfolio.select_dtypes(include=['number']) != 0).any(1)]
-                portfolio_df.loc[ohlcv_df.index[-1], new_portfolio_values['asset']] = new_portfolio_values['total'].values
+                portfolio_df.loc[ohlcv_df.index[-1], new_portfolio_values['symbol']] = new_portfolio_values['total'].values
                 
-                zero_indexes = portfolio_df.columns.difference(new_portfolio_values['asset'])
+                zero_indexes = portfolio_df.columns.difference(new_portfolio_values['symbol'])
                 portfolio_df.loc[ohlcv_df.index[-1], zero_indexes] = 0.0
                 portfolio_df.to_csv('portfolio.csv')
                 
-                # Update USDT based portfolio
-                portfolio_usdt_df = pd.read_csv('portfolio_usdt.csv', index_col=0)
-                as_list = portfolio_usdt_df.index.to_list()
-                portfolio_usdt_df.index = [pd.Timestamp(x) for x in as_list]
+                # Update EUR based portfolio
+                portfolio_eur_df = pd.read_csv('portfolio_eur.csv', index_col=0)
+                as_list = portfolio_eur_df.index.to_list()
+                portfolio_eur_df.index = [pd.Timestamp(x) for x in as_list]
                 
                 portfolio_asset_list = portfolio_df.columns.to_list()
-                exclude_asset_list = ['USDT', 'EON', 'ADD', 'MEETONE', 'ATD', 'EOP']
+                exclude_asset_list = ['EUR', 'EON', 'ADD', 'MEETONE', 'ATD', 'EOP']
                 portfolio_asset_list = [x for x in portfolio_asset_list if x not in exclude_asset_list]
-                tickers_string = [x + '/USDT' for x in portfolio_asset_list]
+                tickers_string = [x + '/EUR' for x in portfolio_asset_list]
                 
                 tickers_bid = {}
                 for ticker in tickers_string:
-                    tickers_bid[ticker[:-5]] = tickers[ticker]['bid']
+                    tickers_bid[ticker[:-4]] = tickers[ticker]['bid']
                 
                 for ticker in tickers_bid.keys():
-                    portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker] = tickers_bid[ticker]*portfolio_df.loc[ohlcv_df.index[-1], ticker]
-                portfolio_usdt_df.loc[ohlcv_df.index[-1], 'USDT'] = portfolio_df.loc[ohlcv_df.index[-1], 'USDT']
-                portfolio_usdt_df.loc[ohlcv_df.index[-1], 'Total'] = portfolio_usdt_df.loc[ohlcv_df.index[-1], tickers_bid.keys()].sum() + portfolio_df.loc[ohlcv_df.index[-1], 'USDT']
-                portfolio_usdt_df.to_csv('portfolio_usdt.csv')
+                    portfolio_eur_df.loc[ohlcv_df.index[-1], ticker] = tickers_bid[ticker]*portfolio_df.loc[ohlcv_df.index[-1], ticker]
+                portfolio_eur_df.loc[ohlcv_df.index[-1], 'EUR'] = portfolio_df.loc[ohlcv_df.index[-1], 'EUR']
+                portfolio_eur_df.loc[ohlcv_df.index[-1], 'Total'] = portfolio_eur_df.loc[ohlcv_df.index[-1], tickers_bid.keys()].sum() + portfolio_df.loc[ohlcv_df.index[-1], 'EUR']
+                portfolio_eur_df.to_csv('portfolio_eur.csv')
                 
                 # Calculate relative change
-                portfolio_usdt_relative_df = pd.read_csv('portfolio_usdt_relative.csv', index_col=0)
-                as_list = portfolio_usdt_relative_df.index.to_list()
-                portfolio_usdt_relative_df.index = [pd.Timestamp(x) for x in as_list]
+                portfolio_eur_relative_df = pd.read_csv('portfolio_eur_relative.csv', index_col=0)
+                as_list = portfolio_eur_relative_df.index.to_list()
+                portfolio_eur_relative_df.index = [pd.Timestamp(x) for x in as_list]
                          
-                if len(portfolio_usdt_df) > 1:
-                    for ticker in portfolio_usdt_df.columns.to_list(): 
-                        new_value = portfolio_usdt_df.loc[ohlcv_df.index[-1], ticker]
+                if len(portfolio_eur_df) > 1:
+                    for ticker in portfolio_eur_df.columns.to_list(): 
+                        new_value = portfolio_eur_df.loc[ohlcv_df.index[-1], ticker]
                         
-                        if (new_value <= 0.1) or (len(portfolio_usdt_df[ticker]) - portfolio_usdt_df[ticker].isnull().sum() <= 1): # smaller than $ 0.01 or only one entry
-                            portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = 0.0
+                        if (new_value <= 0.1) or (len(portfolio_eur_df[ticker]) - portfolio_eur_df[ticker].isnull().sum() <= 1): # smaller than € 0.01 or only one entry
+                            portfolio_eur_relative_df.loc[ohlcv_df.index[-1], ticker] = 0.0
                         else:
-                            old_non_zero_index = portfolio_usdt_df[ticker][portfolio_usdt_df[ticker] >= 0.01].index[-2]
-                            old_non_zero_value = portfolio_usdt_df.loc[old_non_zero_index, ticker]
-                            portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], ticker] = round((new_value - old_non_zero_value)/new_value * 100,2)
+                            old_non_zero_index = portfolio_eur_df[ticker][portfolio_eur_df[ticker] >= 0.01].index[-2]
+                            old_non_zero_value = portfolio_eur_df.loc[old_non_zero_index, ticker]
+                            portfolio_eur_relative_df.loc[ohlcv_df.index[-1], ticker] = round((new_value - old_non_zero_value)/new_value * 100,2)
                     
-                    portfolio_usdt_relative_df.to_csv('portfolio_usdt_relative.csv')
+                    portfolio_eur_relative_df.to_csv('portfolio_eur_relative.csv')
                     
             
                 #%% Plot portfolio on display
@@ -367,11 +366,11 @@ while True:
                     HRYimage = Image.new('1', (epd.height, epd.width), 255)               
                     drawblack = ImageDraw.Draw(HBlackimage)
                     drawry = ImageDraw.Draw(HRYimage)
-                    drawblack.text((10, 0),  'BTC: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'BTC'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'BTC'],2)) + '%)', font = font14, fill = 0)
-                    drawblack.text((10, 20), 'ETH: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'ETH'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'ETH'],2)) + '%)', font = font14, fill = 0)
-                    drawblack.text((10, 40), 'ADA: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'ADA'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'ADA'],2)) + '%)', font = font14, fill = 0)
-                    drawblack.text((10, 60), 'USDT: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'USDT'],2)), font = font14, fill = 0)
-                    drawblack.text((10, 80), 'Total: $' + str(round(portfolio_usdt_df.loc[ohlcv_df.index[-1], 'Total'],2)) + ' ' + '(' + str(round(portfolio_usdt_relative_df.loc[ohlcv_df.index[-1], 'Total'],2)) + '%)', font = font14, fill = 0)
+                    drawblack.text((10, 0),  'BTC: €' + str(round(portfolio_eur_df.loc[ohlcv_df.index[-1], 'BTC'],2)) + ' ' + '(' + str(round(portfolio_eur_relative_df.loc[ohlcv_df.index[-1], 'BTC'],2)) + '%)', font = font14, fill = 0)
+                    drawblack.text((10, 20), 'ETH: €' + str(round(portfolio_eur_df.loc[ohlcv_df.index[-1], 'ETH'],2)) + ' ' + '(' + str(round(portfolio_eur_relative_df.loc[ohlcv_df.index[-1], 'ETH'],2)) + '%)', font = font14, fill = 0)
+                    drawblack.text((10, 40), 'ADA: €' + str(round(portfolio_eur_df.loc[ohlcv_df.index[-1], 'ADA'],2)) + ' ' + '(' + str(round(portfolio_eur_relative_df.loc[ohlcv_df.index[-1], 'ADA'],2)) + '%)', font = font14, fill = 0)
+                    drawblack.text((10, 60), 'EUR: €' + str(round(portfolio_eur_df.loc[ohlcv_df.index[-1], 'EUR'],2)), font = font14, fill = 0)
+                    drawblack.text((10, 80), 'Total: €' + str(round(portfolio_eur_df.loc[ohlcv_df.index[-1], 'Total'],2)) + ' ' + '(' + str(round(portfolio_eur_relative_df.loc[ohlcv_df.index[-1], 'Total'],2)) + '%)', font = font14, fill = 0)
                     HBlackimage = HBlackimage.transpose(Image.ROTATE_180)
                     HRYimage = HRYimage.transpose(Image.ROTATE_180)
                     epd.display(epd.getbuffer(HBlackimage), epd.getbuffer(HRYimage))
